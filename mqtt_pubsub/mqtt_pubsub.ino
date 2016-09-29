@@ -30,6 +30,7 @@ String sDataTopic = String(dataTopic);
 int ledPin = 3;
 // Analog 0 is the input pin
 int lightPinIn = 0;
+//
 
 // defines and variable for sensor/control mode
 #define MODE_OFF    0  // not sensing light, LED off
