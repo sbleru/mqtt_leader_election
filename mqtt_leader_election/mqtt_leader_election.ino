@@ -22,11 +22,11 @@ PubSubClient client;
 EthernetClient ethClient;
 
 // topic
-char electionTopic[] = "election";
+char electTopic[] = "election";
 char dataTopic[] = "data";
 char syncTopic[] = "sync";
 char setTopic[] = "set";
-String sElectionTopic = String(electionTopic);
+String selectTopic = String(electTopic);
 String sDataTopic = String(dataTopic);
 
 // Pin 3 is the LED output pin
@@ -62,6 +62,11 @@ bool isElected = false;
 //TODO:IPアドレスとかどういった者にするべきか検討
 int deviceID;
 
+//RTT TODO:rttを自分で求める
+int rtt = 30;
+//int rtt = 20;
+//int rtt = 10;
+
 class Player{
   int playerID;
   int value;
@@ -90,6 +95,8 @@ void setup()
   pinMode(ledPin2, OUTPUT);
 
   //initialize device ID
+  //TODO:deviceIDが0ならhost, それ以外はhostからもらうように
+  //hostにするかどうかはRTTをブルーアルゴリズムのように比較する
 //  deviceID = 0;
 //  deviceID = 1;
   deviceID = 2;
@@ -122,8 +129,8 @@ void loop()
         client.subscribe(syncTopic, 1);
       client.subscribe(setTopic, 1);
       // leader election topic
-//      client.publish(electionTopic, "1");
-//      client.subscribe(electionTopic, 1);
+//      client.publish(electTopic, "1");
+//      client.subscribe(electTopic, 1);
   }
   
 //  if(role == LEADER){
@@ -163,44 +170,6 @@ void loop()
     digitalWrite(ledPin2, HIGH);
   }
   
-//  switch (senseMode) {
-//    case MODE_OFF:
-//      // light should be off
-//      digitalWrite(ledPin, LOW);
-//      break;
-//    case MODE_ON:
-//      // light should be on
-//      digitalWrite(ledPin, HIGH);
-//      break;
-//    case MODE_SENSE:
-//      // light is adaptive to light sensor
-//      
-//      // read from light sensor (photocell)
-//      int lightRead = analogRead(lightPinIn);
-//
-//      // if there is light in the room, turn off LED
-//      // else, if it is "dark", turn it on
-//      // scale of light in this circit is roughly 0 - 900
-//      // 500 is a "magic number" for "dark"
-//      if (lightRead > 500) {
-//        digitalWrite(ledPin0, LOW);
-//      } else {
-//        digitalWrite(ledPin0, HIGH);
-//      }
-//      
-//      // publish light reading every 5 seconds
-//      if (millis() > (time + 1000)) {
-//        time = millis();
-//        String pubString = "";
-//        pubString += String(lightRead);
-//        pubString.toCharArray(message_buff, pubString.length()+1);
-//        //Serial.println(pubString);
-////        client.publish("topic", message_buff, true);
-//        client.publish(dataTopic, message_buff, true );
-//      }
-       
-//  }
-  
   // MQTT client loop processing
   client.loop();
 }
@@ -237,36 +206,8 @@ void setValue(char* values, unsigned int len){
   Serial.println(_val);
   
   pl[_id].setValue(_id, _val);
-  
-//  switch(_id){
-//    case 0:
-//      pl[_id].setValue(_id, _val);
-//      break;
-//    case 1: lightRead1=_val; break;
-//    case 2: lightRead2=_val; break;
-//    default: break;
-//  }
 
   return;
-  
-//  int _id, _val;
-//  char *tok;
-//
-//  Serial.println(values);
-//
-//  tok = strtok( values, " " );
-//  while( tok != NULL ){
-//    _id = atoi(tok);
-//    tok = strtok( NULL, " " );  /* 2回目以降 */
-//    _val = atoi(tok);
-//  }
-//  
-//  Serial.println(_id);
-//  Serial.println(_val);
-//  
-//  pl[_id].setValue(_id, _val);
-
-//  return;
 }
 
 // handles message arrived on subscribed topic(s)
@@ -284,7 +225,6 @@ void callback(char* topic, byte* payload, unsigned int length) {
   //TODO:メッセージの分解をホストとゲストどちらでやるか
   if(strcmp(topic, syncTopic) == 0){
     client.publish(setTopic, recvMessage, true );
-//    client.publish(setTopic, payload, length, true );
     
   } else if(strcmp(topic, setTopic) == 0) {
     setValue(recvMessage, length);
