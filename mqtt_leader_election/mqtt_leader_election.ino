@@ -15,13 +15,15 @@ byte MQTT_SERVER[] = {192, 168, 2, 50 };
 
 // MAC Address of Arduino Ethernet Sheild (on sticker on shield)
 //byte MAC_ADDRESS[] = {0x00, 0x50, 0xC2, 0x97, 0x20, 0xD8}; /* UX8 */
-byte MAC_ADDRESS[] = {0x00, 0x50, 0xC2, 0x97, 0x20, 0xD9 }; /* Nym */
-//byte MAC_ADDRESS[] = {0x90, 0xA2, 0xDA, 0x0E, 0xF3, 0x10 }; /* UXt */
+//byte MAC_ADDRESS[] = {0x00, 0x50, 0xC2, 0x97, 0x20, 0xD9 }; /* Nym */
+byte MAC_ADDRESS[] = {0x90, 0xA2, 0xDA, 0x0E, 0xF3, 0x10 }; /* UXt */
 //byte MAC_ADDRESS[] = {0x90, 0xA2, 0xDA, 0x10, 0x8D, 0x8A }; /*  */
 PubSubClient client;
 EthernetClient ethClient;
 
 // topic
+char ipTopic[] = "ip";
+char rttTopic[10];
 char electTopic[] = "election";
 char dataTopic[] = "data";
 char syncTopic[] = "sync";
@@ -44,6 +46,8 @@ int lightPinIn = 0;
 int senseMode = 4;
 
 unsigned long time;
+unsigned long pubTime=0, subTime=0;
+unsigned long rttCounter=0, rtt=0, rttAverage=0;
 
 char message_buff[100];
 
@@ -52,20 +56,17 @@ char message_buff[100];
 #define LEADER    1
 
 //first role is follower
-int role = FOLLOWER;
-//int role = LEADER;
+//int role = FOLLOWER;
+int role = LEADER;
 
+//リーダーを決めるための仮の代表者かどうか
+bool isPreLeader;
 //if leader election finished.
 bool isElected = false;
 
 //プレイ端末のID
 //TODO:IPアドレスとかどういった者にするべきか検討
 int deviceID;
-
-//RTT TODO:rttを自分で求める
-int rtt = 30;
-//int rtt = 20;
-//int rtt = 10;
 
 class Player{
   int playerID;
@@ -75,14 +76,15 @@ public:
   void setValue(int _id, int _val);
   int getValue(){ return value; }
 };
-//Player::Player(int _id):playerID(_id){}
-//void Player::setValue(int _id, int _val):playerID(_id), value(_val){}
 void Player::setValue(int _id, int _val){
   playerID = _id;
   value = _val;  
 }
 
 Player pl[3];
+
+char ip[15];
+char iprtt[100];
 
 //プロトタイプ宣言
 void callback(char* topic, byte* payload, unsigned int length);
@@ -97,9 +99,9 @@ void setup()
   //initialize device ID
   //TODO:deviceIDが0ならhost, それ以外はhostからもらうように
   //hostにするかどうかはRTTをブルーアルゴリズムのように比較する
-//  deviceID = 0;
+  deviceID = 0;
 //  deviceID = 1;
-  deviceID = 2;
+//  deviceID = 2;
   
   // init serial link for debugging
   Serial.begin(9600);
@@ -112,6 +114,8 @@ void setup()
 
   client = PubSubClient(MQTT_SERVER, 1883, callback, ethClient);
 
+  setIPAddress();
+
   //プレイヤーの設定
   //TODO:動的にプレイヤーidを生成して追加できるように
   for(int i=0; i<3; i++) pl[i].setValue(i,0);
@@ -121,21 +125,29 @@ void loop()
 {  
   if (!client.connected())
   {
-      //
       client.connect("shinji");
-      client.publish(dataTopic, "I'm alive!");
+      client.subscribe(ipTopic, 1);
+      client.subscribe(rttTopic, 1);
       client.subscribe(dataTopic, 1);
       if(role == LEADER)
         client.subscribe(syncTopic, 1);
       client.subscribe(setTopic, 1);
-      // leader election topic
-//      client.publish(electTopic, "1");
 //      client.subscribe(electTopic, 1);
   }
   
 //  if(role == LEADER){
 //    senseMode = 2;
 //  }
+
+  //RTTフェーズ
+  if (millis() > (time + 1000)) {
+    time = millis();
+    pubTime = millis();
+    client.publish(rttTopic, "", true);
+  }
+
+  //ipアドレスを各ノードに送る
+  client.publish(ipTopic, iprtt, sizeof(iprtt) / sizeof(iprtt[0]));
 
   //自身の値を取得
   //read from light sensor (photocell)
@@ -216,18 +228,55 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
   int i;
   char recvMessage[100];
+  char rttTemp[100];
+  char iprttTemp[100];
   // create character buffer with ending null terminator (string)
   for(i=0; i<length; i++) {
     recvMessage[i] = payload[i];
   }
   recvMessage[i] = '\0';
 
+  
+  if(strcmp(topic, ipTopic) == 0){
+    Serial.println(recvMessage);
+    
+  } else if(strcmp(topic, rttTopic) == 0){
+    rtt += millis() - pubTime;
+    rttCounter++;
+    rttAverage = rtt / rttCounter;
+    sprintf(rttTemp, "%d", rttAverage);
+    strcat(iprttTemp, ip);
+    strcat(iprttTemp, " ");
+    strcat(iprttTemp,rttTemp);
+    strcpy(iprtt, iprttTemp);
+
+    Serial.println(ip);
+    Serial.println(iprttTemp);
+    Serial.println(iprtt);
+    
   //TODO:メッセージの分解をホストとゲストどちらでやるか
-  if(strcmp(topic, syncTopic) == 0){
+  } else if(strcmp(topic, syncTopic) == 0){
     client.publish(setTopic, recvMessage, true );
     
   } else if(strcmp(topic, setTopic) == 0) {
     setValue(recvMessage, length);
   }
+}
+
+void setIPAddress()
+{
+  char tempip[10];
+
+  sprintf(rttTopic, "%d", Ethernet.localIP()[3]);
+  Serial.println("isPassed\n");
+
+  //ipアドレスを文字列として連結させる
+  for(int i=0; i<4; i++){
+    sprintf(tempip, "%d", Ethernet.localIP()[i]);
+    
+    strcat(ip, tempip);
+  }
+
+  Serial.println(ip);
 }
 
