@@ -5,9 +5,9 @@
 #include <string.h>
 
 /*
- * LightSensorMqttDemo
+ * MqttLeaderElectionDemo
  *
- * A simple m2m.io platform demo for Arduino.
+ * A simple application for mqtt leader election
  */
 
 //#define MQTT_SERVER "192, 168, 2, 50"
@@ -23,7 +23,7 @@ EthernetClient ethClient;
 
 // topic
 char ipTopic[] = "ip";
-char rttTopic[10];
+char rttTopic[15];  //各端末のipアドレスとする
 char electTopic[] = "election";
 char dataTopic[] = "data";
 char syncTopic[] = "sync";
@@ -44,10 +44,6 @@ int lightPinIn = 0;
 #define MODE_ON     1  // not sensing light, LED on
 #define MODE_SENSE  2  // sensing light, LED controlled by software. this is leader mode.
 int senseMode = 4;
-
-unsigned long time;
-unsigned long pubTime=0, subTime=0;
-unsigned long rttCounter=0, rtt=0, rttAverage=0;
 
 char message_buff[100];
 
@@ -83,8 +79,14 @@ void Player::setValue(int _id, int _val){
 
 Player pl[3];
 
+/*Leader Election関係*/
+unsigned long time;
+unsigned long pubTime=0;
+unsigned long rttCounter=0, rtt=0, rttAverage=0;
 char ip[15];
 char iprtt[100];
+char* eachIP[10], eachRTT[10];
+int joinCount=0;
 
 //プロトタイプ宣言
 void callback(char* topic, byte* payload, unsigned int length);
@@ -98,11 +100,10 @@ void setup()
 
   //initialize device ID
   //TODO:deviceIDが0ならhost, それ以外はhostからもらうように
-  //hostにするかどうかはRTTをブルーアルゴリズムのように比較する
+  //hostにするかどうかはRTTをブリーアルゴリズムのように比較する
   deviceID = 0;
 //  deviceID = 1;
 //  deviceID = 2;
-  
   // init serial link for debugging
   Serial.begin(9600);
   
@@ -113,9 +114,7 @@ void setup()
   }
 
   client = PubSubClient(MQTT_SERVER, 1883, callback, ethClient);
-
   setIPAddress();
-
   //プレイヤーの設定
   //TODO:動的にプレイヤーidを生成して追加できるように
   for(int i=0; i<3; i++) pl[i].setValue(i,0);
@@ -140,6 +139,7 @@ void loop()
 //  }
 
   //RTTフェーズ
+  //TODO:1秒に1回にしているが検討
   if (millis() > (time + 1000)) {
     time = millis();
     pubTime = millis();
@@ -197,8 +197,6 @@ void setValue(char* values, unsigned int len){
   char* vals[2];
   char *tok;
 
-  Serial.println(values);
-
   tok = strtok( values, " " );
   while( tok != NULL ){
     vals[i] = (char *)malloc(sizeof(char) * (strlen(tok)+1));
@@ -206,20 +204,31 @@ void setValue(char* values, unsigned int len){
     i++;
     tok = strtok( NULL, " " );  /* 2回目以降 */
   }
-
   _id = atoi(vals[0]);
   _val = atoi(vals[1]);
-
   for(int i=0; i<2; i++){
     free(vals[i]);
   }
-  
   Serial.println(_id);
   Serial.println(_val);
-  
   pl[_id].setValue(_id, _val);
 
   return;
+}
+
+void DecideLeader(char* _iprtt, unsigned int _len){
+  char *tok;
+  char _canIP[15], _canRTT[10];
+
+  tok = strtok(_iprtt, " "));
+  while( tok != NULL ){
+    _eachIP[joinCount] = (char *)malloc(sizeof(char) * (strlen(tok)+1));
+    strcpy(eachIP[joinCount], tok);
+    tok = strtok( NULL, " " );  /* 2回目以降 */
+    if(tok != NULL)
+      eachRTT[joinCount] = (char *)malloc(sizeof(char) * (strlen(tok)+1));
+    strcpy(eachRTT[joinCount], tok);
+  }
 }
 
 // handles message arrived on subscribed topic(s)
@@ -227,39 +236,39 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.println("Message arrived:  topic: " + String(topic));
 
   int i;
-  char recvMessage[100];
-  char rttTemp[100];
-  char iprttTemp[100];
-  // create character buffer with ending null terminator (string)
-  for(i=0; i<length; i++) {
-    recvMessage[i] = payload[i];
-  }
-  recvMessage[i] = '\0';
-
+  char _recvMessage[100];
+  char _rttChar[100];
+  char _iprttTemp[100] = {0};
   
+  //create character buffer with ending null terminator (string)
+  for(i=0; i<length; i++) {
+    _recvMessage[i] = payload[i];
+  }
+  _recvMessage[i] = '\0';
+
+  //Topicの場合分け
   if(strcmp(topic, ipTopic) == 0){
-    Serial.println(recvMessage);
+    Serial.println(_recvMessage);
+    DecideLeader(_recvMessage, length);
     
   } else if(strcmp(topic, rttTopic) == 0){
-    rtt += millis() - pubTime;
+    /*rttの今までの平均を求める*/
+    rtt += (millis() - pubTime);
     rttCounter++;
     rttAverage = rtt / rttCounter;
-    sprintf(rttTemp, "%d", rttAverage);
-    strcat(iprttTemp, ip);
-    strcat(iprttTemp, " ");
-    strcat(iprttTemp,rttTemp);
-    strcpy(iprtt, iprttTemp);
-
-    Serial.println(ip);
-    Serial.println(iprttTemp);
-    Serial.println(iprtt);
+    /*iprtt = "ipAdress + " " + rtt" とする*/
+    sprintf(_rttChar, "%d", rttAverage); //数値を文字列に変換
+    strcat(_iprttTemp, ip);
+    strcat(_iprttTemp, " ");
+    strcat(_iprttTemp,_rttChar);
+    strcpy(iprtt, _iprttTemp);
     
   //TODO:メッセージの分解をホストとゲストどちらでやるか
   } else if(strcmp(topic, syncTopic) == 0){
-    client.publish(setTopic, recvMessage, true );
+    client.publish(setTopic, _recvMessage, true );
     
   } else if(strcmp(topic, setTopic) == 0) {
-    setValue(recvMessage, length);
+    setValue(_recvMessage, length);
   }
 }
 
@@ -267,16 +276,14 @@ void setIPAddress()
 {
   char tempip[10];
 
-  sprintf(rttTopic, "%d", Ethernet.localIP()[3]);
-  Serial.println("isPassed\n");
+//  sprintf(rttTopic, "%d", Ethernet.localIP()[3]);
 
   //ipアドレスを文字列として連結させる
   for(int i=0; i<4; i++){
     sprintf(tempip, "%d", Ethernet.localIP()[i]);
-    
     strcat(ip, tempip);
   }
-
   Serial.println(ip);
+  strcpy(rttTopic, ip);
 }
 
