@@ -14,9 +14,9 @@
 byte MQTT_SERVER[] = {192, 168, 2, 50 };
 
 // MAC Address of Arduino Ethernet Sheild (on sticker on shield)
-//byte MAC_ADDRESS[] = {0x00, 0x50, 0xC2, 0x97, 0x20, 0xD8}; /* UX8 */
+byte MAC_ADDRESS[] = {0x00, 0x50, 0xC2, 0x97, 0x20, 0xD8}; /* UX8 */
 //byte MAC_ADDRESS[] = {0x00, 0x50, 0xC2, 0x97, 0x20, 0xD9 }; /* Nym */
-byte MAC_ADDRESS[] = {0x90, 0xA2, 0xDA, 0x0E, 0xF3, 0x10 }; /* UXt */
+//byte MAC_ADDRESS[] = {0x90, 0xA2, 0xDA, 0x0E, 0xF3, 0x10 }; /* UXt */
 //byte MAC_ADDRESS[] = {0x90, 0xA2, 0xDA, 0x10, 0x8D, 0x8A }; /*  */
 PubSubClient client;
 EthernetClient ethClient;
@@ -85,7 +85,8 @@ unsigned long time;
 unsigned long pubTime=0;
 unsigned long rttCounter=0, rtt=0, rttAverage=0;
 //char ip[15];
-unsigned long ip;
+long long ip;
+char ipChar[12] = {0};
 //char iprtt[100];
 byte iprtt[2] = {0}; //{ip[3], rtt}
 int eachIP[10], eachRTT[10];
@@ -320,11 +321,12 @@ void callback(char* topic, byte* payload, unsigned int length) {
 //    strcpy(iprtt, _iprttTemp);
 
   } else if(strcmp(topic, electTopic) == 0){
-    Serial.println(atoi(_recvMessage));
-    if(ip == atoi(_recvMessage)){
+//    Serial.println(atoi(_recvMessage));
+//    if(ip == atoi(_recvMessage)){
+    if(strcmp(_recvMessage, ipChar)) {
       role = LEADER;
       client.publish(electTopic, "1");
-    } else if(ip == 1) {
+    } else if(strcmp(_recvMessage, "1")) {
       isElected = true;
     } else {
       role = FOLLOWER;
@@ -356,7 +358,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 void setIPAddress()
 {
   char tempip[10] = {0};
-  char ipChar[15] = {0};
+//  char ipChar[15] = {0};
   byte i;
 
 //  sprintf(rttTopic, "%d", Ethernet.localIP()[3]);
@@ -367,10 +369,10 @@ void setIPAddress()
     strcat(ipChar, tempip);
   }
   strcpy(rttTopic, ipChar);
-  strcat(ipChar, '\0');
-//  ip = atoi(ipChar);
 //  iprtt[0] = ip;
   iprtt[0] = Ethernet.localIP()[3];
-  Serial.println(ip);
+
+//  ip = Ethernet.localIP()[0] * 1000 * 1000 * 1000 + Ethernet.localIP()[1] * 1000 * 1000 + Ethernet.localIP()[2] * 1000 + Ethernet.localIP()[3];
+//  Serial.println(ip);
 }
 
