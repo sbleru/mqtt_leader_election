@@ -53,7 +53,7 @@ char message_buff[100];
 #define LEADER    1
 
 //first role is follower
-int role = FOLLOWER;
+byte role = FOLLOWER;
 //int role = LEADER;
 
 //リーダーを決めるための仮の代表者かどうか
@@ -85,10 +85,10 @@ unsigned long time;
 unsigned long pubTime=0;
 unsigned long rttCounter=0, rtt=0, rttAverage=0;
 //char ip[15];
-int ip;
+unsigned long ip;
 //char iprtt[100];
-byte iprtt[2] = {0}; //{ip, rtt}
-byte eachIP[10], eachRTT[10];
+byte iprtt[2] = {0}; //{ip[3], rtt}
+int eachIP[10], eachRTT[10];
 //char* eachIP[10], eachRTT[10];
 byte joinCount=0;
 byte idCount[1]={0};
@@ -96,6 +96,7 @@ bool isAppriedID=false;
 
 //プロトタイプ宣言
 void callback(char* topic, byte* payload, unsigned int length);
+void setIPAddress();
 
 void setup()
 {
@@ -115,9 +116,10 @@ void setup()
 
   client = PubSubClient(MQTT_SERVER, 1883, callback, ethClient);
   setIPAddress();
+  
   //プレイヤーの設定
   //TODO:動的にプレイヤーidを生成して追加できるように
-  for(int i=0; i<3; i++) pl[i].setValue(i,0);
+//  for(int i=0; i<3; i++) pl[i].setValue(i,0);
 }
 
 void loop()
@@ -134,59 +136,59 @@ void loop()
       client.subscribe(electTopic, 1);
   }
 
-  //RTTフェーズ
+  //RTTフェーズ開始
   //TODO:1秒に1回にしているが検討
   if (millis() > (time + 1000)) {
     time = millis();
     pubTime = millis();
     client.publish(rttTopic, "", true);
   }
-
+  /*リーダー選任が終了しているかどうか*/
   if(!isElected){
     //ipアドレスとRTTを各ノードに送る
     client.publish(ipTopic, iprtt, sizeof(iprtt) / sizeof(iprtt[0]));
   } else {
-    /*もらってなければ一意のIDをもらう*/
+    /*deviceIDをもらってなければ一意のIDをもらう*/
     if(deviceID < 0) {
       if(role == LEADER){
         deviceID = 0;
       } else if(role == FOLLOWER) {
         client.publish(getIDTopic, "apply", true);
       }
-    }
-
-    //自身の値を取得
-    //read from light sensor (photocell)
-    int lightRead = analogRead(lightPinIn);
-    
-    //自分の値をホストへ送信
-    //publish light reading every 1 seconds
-    if (millis() > (time + 1000)) {
-      time = millis();
-      String pubString = "";
-      pubString += String(deviceID);
-      pubString += " ";
-      pubString += String(lightRead);
-      pubString.toCharArray(message_buff, pubString.length()+1);
-      client.publish(syncTopic, message_buff, true );
-    }
-    
-    if (pl[0].getValue() > 500) {
-      digitalWrite(ledPin0, LOW);
+    /*deviceIDがあればアプリケーション実行開始*/
     } else {
-      digitalWrite(ledPin0, HIGH);
+      //自身の値を取得
+      //read from light sensor (photocell)
+      int lightRead = analogRead(lightPinIn);
+      
+      //自分の値をホストへ送信
+      //publish light reading every 1 seconds
+      if (millis() > (time + 1000)) {
+        time = millis();
+        String pubString = "";
+        pubString += String(deviceID);
+        pubString += " ";
+        pubString += String(lightRead);
+        pubString.toCharArray(message_buff, pubString.length()+1);
+        client.publish(syncTopic, message_buff, true );
+      }
+      
+      if (pl[0].getValue() > 500) {
+        digitalWrite(ledPin0, LOW);
+      } else {
+        digitalWrite(ledPin0, HIGH);
+      }
+      if (pl[1].getValue() > 500) {
+        digitalWrite(ledPin1, LOW);
+      } else {
+        digitalWrite(ledPin1, HIGH);
+      }
+      if (pl[2].getValue() > 500) {
+        digitalWrite(ledPin2, LOW);
+      } else {
+        digitalWrite(ledPin2, HIGH);
+      }
     }
-    if (pl[1].getValue() > 500) {
-      digitalWrite(ledPin1, LOW);
-    } else {
-      digitalWrite(ledPin1, HIGH);
-    }
-    if (pl[2].getValue() > 500) {
-      digitalWrite(ledPin2, LOW);
-    } else {
-      digitalWrite(ledPin2, HIGH);
-    }
-    
   }
   // MQTT client loop processing
   client.loop();
@@ -229,6 +231,7 @@ void DecideLeader(byte* _iprtt, unsigned int _len){
   byte minIP, minRTT;
   char leaderIP[15];
 
+  /*参加者、新規参加者に対してRTTを更新*/
   for(byte i=0; i<joinCount; i++){
     if(eachIP[i] == _iprtt[0]){
       //すでにIPアドレスが登録されていればRTTの更新
@@ -242,18 +245,20 @@ void DecideLeader(byte* _iprtt, unsigned int _len){
     eachIP[joinCount] = _iprtt[0];
     eachRTT[joinCount++] = _iprtt[1];
   }
-
   /*２端末未満なら返す*/
   if(joinCount < 1)
     return;
-  /*最小ip端末を見つける*/
-  minIP = 0;
-  for(byte i=1; i<joinCount; i++){
-    if(eachIP[minIP] > eachIP[i])
-      minIP = i;
-  }
-  /*自分が最小のipアドレスでなかったら返す*/
-  if(iprtt[0] != eachIP[minIP])
+//  /*最小ip端末を見つける*/
+//  minIP = 0;
+//  for(byte i=1; i<joinCount; i++){
+//    if(eachIP[minIP] > eachIP[i])
+//      minIP = i;
+//  }
+//  /*自分が最小のipアドレスでなかったら返す*/
+//  if(iprtt[0] != eachIP[minIP])
+//    return;
+  /*自分が最初の参加者でなければ返す*/
+  if(ip != eachIP[0])
     return;
   /*最小RTT端末を見つける*/
   minRTT=0;
@@ -261,7 +266,6 @@ void DecideLeader(byte* _iprtt, unsigned int _len){
     if(eachRTT[minRTT] > eachRTT[i])
       minRTT = i;
   }
-
   /*IPアドレスがeachIP[minRTT]であるものがLeader*/
   sprintf(leaderIP, "%d", eachIP[minRTT]);
   client.publish(electTopic, leaderIP, true);
@@ -297,8 +301,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
   //Topicの場合分け
   if(strcmp(topic, ipTopic) == 0){
-    Serial.println(payload[0]);
-    Serial.println(payload[1]);
+    Serial.println(payload[0]); //iprtt[0]
+    Serial.println(payload[1]); //iprtt[1]
     DecideLeader(payload, length);
     
   } else if(strcmp(topic, rttTopic) == 0){
@@ -316,8 +320,11 @@ void callback(char* topic, byte* payload, unsigned int length) {
 //    strcpy(iprtt, _iprttTemp);
 
   } else if(strcmp(topic, electTopic) == 0){
-    if(iprtt[0] == atoi(_recvMessage)){
+    Serial.println(atoi(_recvMessage));
+    if(ip == atoi(_recvMessage)){
       role = LEADER;
+      client.publish(electTopic, "1");
+    } else if(ip == 1) {
       isElected = true;
     } else {
       role = FOLLOWER;
@@ -345,22 +352,25 @@ void callback(char* topic, byte* payload, unsigned int length) {
   }
 }
 
-//ipアドレスを文字列としてつなげ、数値変換
+//ipアドレスを文字列としてつなげ、整数値変換
 void setIPAddress()
 {
-  char tempip[10];
-  char ipChar[15];
+  char tempip[10] = {0};
+  char ipChar[15] = {0};
+  byte i;
 
 //  sprintf(rttTopic, "%d", Ethernet.localIP()[3]);
 
   //ipアドレスを文字列として連結させる
-  for(int i=0; i<4; i++){
+  for(i=0; i<4; i++){
     sprintf(tempip, "%d", Ethernet.localIP()[i]);
     strcat(ipChar, tempip);
   }
   strcpy(rttTopic, ipChar);
+  strcat(ipChar, '\0');
   ip = atoi(ipChar);
-  iprtt[0] = ip;
+//  iprtt[0] = ip;
+  iprtt[0] = Ethernet.localIP()[3];
   Serial.println(ip);
 }
 
