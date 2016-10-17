@@ -368,7 +368,7 @@ void setIPAddress()
   }
   strcpy(rttTopic, ipChar);
   strcat(ipChar, '\0');
-  ip = atoi(ipChar);
+//  ip = atoi(ipChar);
 //  iprtt[0] = ip;
   iprtt[0] = Ethernet.localIP()[3];
   Serial.println(ip);
