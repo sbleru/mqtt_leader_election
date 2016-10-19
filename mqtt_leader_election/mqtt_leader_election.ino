@@ -14,9 +14,9 @@
 byte MQTT_SERVER[] = {192, 168, 2, 50 };
 
 // MAC Address of Arduino Ethernet Sheild (on sticker on shield)
-//byte MAC_ADDRESS[] = {0x00, 0x50, 0xC2, 0x97, 0x20, 0xD8}; /* UX8 */
+byte MAC_ADDRESS[] = {0x00, 0x50, 0xC2, 0x97, 0x20, 0xD8}; /* UX8 */
 //byte MAC_ADDRESS[] = {0x00, 0x50, 0xC2, 0x97, 0x20, 0xD9 }; /* Nym */
-byte MAC_ADDRESS[] = {0x90, 0xA2, 0xDA, 0x0E, 0xF3, 0x10 }; /* UXt */
+//byte MAC_ADDRESS[] = {0x90, 0xA2, 0xDA, 0x0E, 0xF3, 0x10 }; /* UXt */
 //byte MAC_ADDRESS[] = {0x90, 0xA2, 0xDA, 0x10, 0x8D, 0x8A }; /*  */
 PubSubClient client;
 EthernetClient ethClient;
@@ -55,7 +55,6 @@ char message_buff[100];
 byte role = FOLLOWER;
 
 bool isDelRetain = false;
-bool isSendIPRTT = false;
 //if leader election finished.
 bool isElected = false;
 bool isReadyApplication = false;
@@ -86,6 +85,7 @@ unsigned long rttCounter=0, rtt=0, rttAverage=0;
 //char ip[15];
 long long ip;
 char ipChar[12] = {0};
+char ipChar3[3] ={0}; //ip[3]
 //char iprtt[100];
 byte iprtt[2] = {0}; //{ip[3], rtt}
 byte eachIP[10], eachRTT[10];
@@ -137,7 +137,6 @@ void loop()
       isDelRetain = true;
     }
 
-    
     client.subscribe(ipTopic, 1);
     client.subscribe(rttTopic, 1);
     client.subscribe(dataTopic, 1);
@@ -145,9 +144,6 @@ void loop()
     client.subscribe(setTopic, 1);
     client.subscribe(getIDTopic, 1);
   }
-
-//  client.publish(dataTopic, "1", true);
-  client.publish(dataTopic, "2", true);
   
   //RTTフェーズ開始
   //TODO:1秒に1回にしているが検討
@@ -159,9 +155,7 @@ void loop()
   /*リーダー選任が終了しているかどうか*/
   if(!isElected){
     //ipアドレスとRTTを各ノードに送る
-    if(client.publish(ipTopic, iprtt, sizeof(iprtt) / sizeof(iprtt[0]), true)){
-      isSendIPRTT = true;
-    }
+    client.publish(ipTopic, iprtt, sizeof(iprtt) / sizeof(iprtt[0]), true)
   
   } else {
     /*deviceIDをもらってなければ一意のIDをもらう*/
@@ -174,7 +168,6 @@ void loop()
     } else {
       if(role == LEADER)
         client.subscribe(syncTopic, 1);
-//      client.subscribe(setTopic, 1);
       isReadyApplication = true;
     }
   }
@@ -194,7 +187,7 @@ void loop()
       pubString += " ";
       pubString += String(lightRead);
       pubString.toCharArray(message_buff, pubString.length()+1);
-      client.publish(syncTopic, message_buff, false );
+      client.publish(syncTopic, message_buff, true );
     }
     
     if (pl[0].getValue() > 500) {
@@ -247,6 +240,9 @@ void setValue(char* values, unsigned int len){
   return;
 }
 
+/**
+ * 
+ */
 //void DecideLeader(char* _iprtt, unsigned int _len){
 void DecideLeader(byte* _iprtt, unsigned int _len){
   byte tempIP, tempRTT;
@@ -278,21 +274,12 @@ void DecideLeader(byte* _iprtt, unsigned int _len){
   }
   /*２端末未満なら返す*/
   if(joinCount < 2){
+    /*現在の参加者をpublish retain付きで*/
+    
     return;
-  } else {
-//    client.subscribe(electTopic, 1);
   }
-//  /*最小ip端末を見つける*/
-//  minIP = 0;
-//  for(byte i=1; i<joinCount; i++){
-//    if(eachIP[minIP] > eachIP[i])
-//      minIP = i;
-//  }
-//  /*自分が最小のipアドレスでなかったら返す*/
-//  if(iprtt[0] != eachIP[minIP])
-//    return;
   /*自分が最初の参加者でなければ返す*/
-  if(ip != eachIP[0])
+  if(iprtt[0] != eachIP[0])
     return;
   /*最小RTT端末を見つける*/
   minRTT=0;
@@ -320,7 +307,7 @@ void DecideLeader(byte* _iprtt, unsigned int _len){
 //  }
 }
 
-/* 
+/** 
  * handles message arrived on subscribed topic(s) 
  */
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -338,17 +325,20 @@ void callback(char* topic, byte* payload, unsigned int length) {
   _recvMessage[i] = '\0';
 
   //Topicの場合分け
+  /*
+   * ipTopic
+   */
   if(strcmp(topic, ipTopic) == 0){
     Serial.println("In ipTopic");
     Serial.print("IPAddress[3]:");
     Serial.println(payload[0]);
     Serial.print("RTT:");
     Serial.println(payload[1]);
-    /*ipアドレスがセットされていなければ呼ばない*/
-//    if(isSendIPRTT) {
-      DecideLeader(payload, length);
-//    }
-    
+    DecideLeader(payload, length);
+
+  /*
+   * rttTopic
+   */ 
   } else if(strcmp(topic, rttTopic) == 0){
     /*rttの今までの平均を求める*/
     rtt += (millis() - pubTime);
@@ -357,28 +347,30 @@ void callback(char* topic, byte* payload, unsigned int length) {
     /*iprtt = "ipAdress + " " + rtt" とする*/
     iprtt[1] = rttAverage;
     
-//    sprintf(_rttChar, "%d", rttAverage); //数値を文字列に変換
-//    strcat(_iprttTemp, ip);
-//    strcat(_iprttTemp, " ");
-//    strcat(_iprttTemp,_rttChar);
-//    strcpy(iprtt, _iprttTemp);
-
+  /*
+   * electTopic
+   */ 
   } else if(strcmp(topic, electTopic) == 0){
     Serial.print("In electTopic \nleader IP address:");
     Serial.println(_recvMessage);
     Serial.print("my IP address:");
-    Serial.println(ipChar);
+    Serial.println(ipChar3);
 //    if(ip == atoi(_recvMessage)){
-    if(strcmp(_recvMessage, ipChar)) {
+    if(strcmp(_recvMessage, ipChar3)) {
       role = LEADER;
       client.publish(electTopic, "1", true);
     } else if(strcmp(_recvMessage, "1")) {
       isElected = true;
+      client.publish(ipTopic, "", true);
+      client.publish(electTopic, "", true);
     } else {
       role = FOLLOWER;
     }
 
-  /*可動物に一意にIDを割り当てる host->guestにIDを渡す*/
+  /*
+   * getIDTopic
+   * 可動物に一意にIDを割り当てる host->guestにIDを渡す
+   */ 
   } else if(strcmp(topic, getIDTopic) == 0){
     if(role == LEADER){
       if(strcmp(_recvMessage, "apply")){
@@ -391,13 +383,22 @@ void callback(char* topic, byte* payload, unsigned int length) {
       deviceID = atoi(_recvMessage);
     }
 
-  //TODO:メッセージの分解をホストとゲストどちらでやるか
+  /*
+   * syncTopic
+   * TODO:メッセージの分解をホストとゲストどちらでやるか
+   */ 
   } else if(strcmp(topic, syncTopic) == 0){
     client.publish(setTopic, _recvMessage, true );
-    
+
+  /*
+   * setTopic
+   */ 
   } else if(strcmp(topic, setTopic) == 0) {
     setValue(_recvMessage, length);
-    
+
+  /*
+   * dataTopic
+   */ 
   } else if(strcmp(topic, dataTopic) == 0) {
     Serial.println(_recvMessage);
   }
@@ -419,6 +420,7 @@ void setIPAddress()
   strcpy(rttTopic, ipChar);
 //  iprtt[0] = ip;
   iprtt[0] = Ethernet.localIP()[3];
+  sprintf(ipChar3, "%d", Ethernet.localIP()[3]);
 //  ip = Ethernet.localIP()[0] * 1000 * 1000 * 1000 + Ethernet.localIP()[1] * 1000 * 1000 + Ethernet.localIP()[2] * 1000 + Ethernet.localIP()[3];
 //  Serial.println(ip);
 }
